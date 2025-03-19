@@ -7,13 +7,14 @@ from ChironAST.builder import astGenPass
 import abstractInterpretation as AI
 import dataFlowAnalysis as DFA
 from sbfl import testsuiteGenerator
+import time
+from collections import defaultdict
 
 sys.path.insert(0, "../Submission/")
 sys.path.insert(0, "ChironAST/")
 sys.path.insert(0, "cfg/")
 
 import pickle
-import time
 import turtle
 import argparse
 from interpreter import *
@@ -26,14 +27,36 @@ import submissionAI as AISub
 from sbflSubmission import computeRanks
 import csv
 
+# Simple profiler class
+class SimpleProfiler:
+    def __init__(self):
+        self.instruction_counts = defaultdict(int)
+        self.start_time = None
+        
+    def start(self):
+        self.instruction_counts.clear()
+        self.start_time = time.time()
+        
+    def track_instruction(self, instruction_type):
+        self.instruction_counts[instruction_type] += 1
+        
+    def get_report(self):
+        end_time = time.time()
+        total_time = end_time - self.start_time
+        
+        report = []
+        report.append("\n=== Simple Profiling Report ===")
+        report.append(f"Total Execution Time: {total_time:.4f}s")
+        report.append("\nInstruction Counts:")
+        for instr, count in self.instruction_counts.items():
+            report.append(f"  {instr}: {count}")
+        return "\n".join(report)
 
 def cleanup():
     pass
 
-
 def stopTurtle():
     turtle.bye()
-
 
 if __name__ == "__main__":
     print(Release)
@@ -51,6 +74,14 @@ if __name__ == "__main__":
     # process the command-line arguments
     cmdparser = argparse.ArgumentParser(
         description="Program Analysis Framework for ChironLang Programs."
+    )
+
+    # Add profiling argument
+    cmdparser.add_argument(
+        "-profile",
+        "--profile",
+        action="store_true",
+        help="Enable basic profiling to track instruction counts and execution time",
     )
 
     # add arguments for parsing command-line arguments
@@ -202,6 +233,9 @@ if __name__ == "__main__":
     if not (type(args.params) is dict):
         raise ValueError("Wrong type for command line arguement '-d' or '--params'.")
 
+    # Initialize profiler if enabled
+    profiler = SimpleProfiler() if args.profile else None
+
     # Instantiate the irHandler
     # this object is passed around everywhere.
     irHandler = IRHandler(ir)
@@ -277,9 +311,8 @@ if __name__ == "__main__":
             print(f"\tInput {index} : {x.data}")
 
     if args.run:
-        # for stmt,pc in ir:
-        #     print(str(stmt.__class__.__bases__[0].__name__),pc)
-
+        if profiler:
+            profiler.start()
         inptr = ConcreteInterpreter(irHandler, args)
         terminated = False
         inptr.initProgramContext(args.params)
@@ -287,7 +320,24 @@ if __name__ == "__main__":
             terminated = inptr.interpret()
             if terminated:
                 break
+            if profiler:
+                stmt, _ = inptr.ir[inptr.pc]
+                if isinstance(stmt, ChironAST.AssignmentCommand):
+                    profiler.track_instruction('assignment')
+                elif isinstance(stmt, ChironAST.ConditionCommand):
+                    profiler.track_instruction('condition')
+                elif isinstance(stmt, ChironAST.MoveCommand):
+                    profiler.track_instruction('move')
+                elif isinstance(stmt, ChironAST.PenCommand):
+                    profiler.track_instruction('pen')
+                elif isinstance(stmt, ChironAST.GotoCommand):
+                    profiler.track_instruction('goto')
+                elif isinstance(stmt, ChironAST.NoOpCommand):
+                    profiler.track_instruction('noop')
+        
         print("Program Ended.")
+        if profiler:
+            print(profiler.get_report())
         print()
         print("Press ESCAPE to exit")
         turtle.listen()
