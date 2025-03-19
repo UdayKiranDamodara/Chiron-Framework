@@ -1,7 +1,8 @@
-
 from ChironAST import ChironAST
 from ChironHooks import Chironhooks
+from profiler.profiler import Profiler
 import turtle
+import time
 
 Release="Chiron v5.3"
 
@@ -36,6 +37,9 @@ class Interpreter:
         turtle.title(Release)
         turtle.bgcolor("white")
         turtle.hideturtle()
+        
+        # Initialize profiler
+        self.profiler = Profiler()
 
     def handleAssignment(self, stmt,tgt):
         raise NotImplementedError('Assignments are not handled!')
@@ -94,22 +98,34 @@ class ConcreteInterpreter(Interpreter):
         print(stmt, stmt.__class__.__name__, tgt)
 
         self.sanityCheck(self.ir[self.pc])
-
+        
+        # Start timing the instruction
+        start_time = time.time()
+        
         if isinstance(stmt, ChironAST.AssignmentCommand):
             ntgt = self.handleAssignment(stmt, tgt)
+            self.profiler.track_instruction('assignment', time.time() - start_time)
         elif isinstance(stmt, ChironAST.ConditionCommand):
             ntgt = self.handleCondition(stmt, tgt)
+            self.profiler.track_instruction('condition', time.time() - start_time)
         elif isinstance(stmt, ChironAST.MoveCommand):
             ntgt = self.handleMove(stmt, tgt)
+            self.profiler.track_instruction('move', time.time() - start_time)
         elif isinstance(stmt, ChironAST.PenCommand):
             ntgt = self.handlePen(stmt, tgt)
+            self.profiler.track_instruction('pen', time.time() - start_time)
         elif isinstance(stmt, ChironAST.GotoCommand):
             ntgt = self.handleGotoCommand(stmt, tgt)
+            self.profiler.track_instruction('goto', time.time() - start_time)
         elif isinstance(stmt, ChironAST.NoOpCommand):
             ntgt = self.handleNoOpCommand(stmt, tgt)
+            self.profiler.track_instruction('noop', time.time() - start_time)
         else:
             raise NotImplementedError("Unknown instruction: %s, %s."%(type(stmt), stmt))
 
+        # Track memory usage
+        self.profiler.track_memory()
+        
         # TODO: handle statement
         self.pc += ntgt
 
@@ -118,11 +134,16 @@ class ConcreteInterpreter(Interpreter):
             self.trtl.write("End, Press ESC", font=("Arial", 15, "bold"))
             if self.args is not None and self.args.hooks:
                 self.chironhook.ChironEndHook(self)
+            # Print profiling report
+            print("\n" + self.profiler.get_report())
             return True
         else:
             return False
     
     def initProgramContext(self, params):
+        # Start profiling
+        self.profiler.start_profiling()
+        
         # This is the starting of the interpreter at setup stage.
         if self.args is not None and self.args.hooks:
             self.chironhook.ChironStartHook(self)
@@ -130,12 +151,14 @@ class ConcreteInterpreter(Interpreter):
         for key,val in params.items():
             var = key.replace(":","")
             exec("setattr(self.prg,\"%s\",%s)" % (var, val))
+            self.profiler.track_variable_access(var)
     
     def handleAssignment(self, stmt, tgt):
         print("  Assignment Statement")
         lhs = str(stmt.lvar).replace(":","")
         rhs = addContext(stmt.rexpr)
         exec("setattr(self.prg,\"%s\",%s)" % (lhs,rhs))
+        self.profiler.track_variable_access(lhs)
         return 1
 
     def handleCondition(self, stmt, tgt):
